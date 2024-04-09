@@ -11,17 +11,56 @@ The data for all aid projects across all 54 countries in Africa was retrieved fr
 
 In the first visualations, please find a map including all xxx aid projects which were retrieved from d-portal.
 
+```{r echo=FALSE}
+# House keeping ----------------------------------------------------------------
+rm(list = ls())
+
+# Packages ----------------------------------------------------------------
+
+# Packages to load
+pckg_to_load_ext <- c("data.table", "sf", "openxlsx", "zoo", "utils", "ggplot2")
+
+
+# Load packages silently
+suppressPackageStartupMessages(
+  invisible(lapply(pckg_to_load_ext, library, character.only = TRUE))
+)
+
+# Setting directories ----------------------------------------------------
+wd <- getwd() # "your path"
+setwd(wd)
+
+# Controls ---------------------------------------------------------------
+africa_countries <- c("Algeria", "Angola", "Benin", "Botswana", "Burkina Faso", "Burundi", "Cabo Verde", "Cameroon", "Central African Republic", "Chad", "Comoros", "Democratic Republic of the Congo" ,"Djibouti", "Egypt", "Equatorial Guinea", "Eritrea","Ethiopia", "Gabon", "Gambia", "Ghana", "Guinea", "Guinea-Bissau", "Côte d'Ivoire", "Kenya", "Lesotho", "Liberia", "Libya", "Madagascar", "Malawi", "Mali", "Mauritania", "Mauritius", "Morocco", "Mozambique", "Namibia", "Niger", "Nigeria", "Republic of the Congo" ,"Rwanda", "São Tomé and Príncipe", "Senegal", "Seychelles", "Sierra Leone", "Somalia", "South Africa", "South Sudan", "Sudan","Swaziland", "Tanzania", "Togo", "Tunisia", "Uganda", "Zambia", "Zimbabwe")
+
+```
+
 ```{r}
 library(sf)
 library(data.table)
+library(tidyr)
 
-aiddata <- read.csv("berlin_restaurants.csv")
-sf_aiddata <- st_as_sf(aiddata, coords = c("longitude", "latitude"), crs = 4326)
+aiddata <- read.csv("data/dportal_map_activities.csv")
+sf_aiddata <- st_as_sf(aiddata, coords = c("location_longitude", "location_latitude"), crs = "ESRI:102022")
 
-head(sf_data)
+head(sf_aiddata)
 
+boundaries <- st_read("data/gadm_410.gpkg")
+africa_boundaries <- boundaries[boundaries$COUNTRY %in% africa_countries,]
 
-mapview::mapview(cities_sf)
+found <- unique(africa_boundaries$COUNTRY)
+missing_countries <- setdiff(africa_countries, found)
+print(missing_countries)
+
+africa_boundaries <- africa_boundaries %>% st_transform(st_crs(sf_aiddata))
+
+master <- st_join(sf_aiddata, africa_boundaries[c("NAME_1", "ENGTYPE_1", "NAME_2", "ENGTYPE_2", "NAME_3", "ENGTYPE_3", "NAME_4", "ENGTYPE_4")])
+boroughs <- master$NAME_1
+rev <- aggregate(x = master["aid"], by = boroughs, FUN = mean)
+rev$name <- boroughs$namgem
+rev
+tmap::qtm(rev, fill="revenue")
+#mapview::mapview(sf_aiddata)
 ```
 
 Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
