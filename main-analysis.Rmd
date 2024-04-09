@@ -1,0 +1,31 @@
+---
+title: "Geospatial Analysis of Aid Data in Africa"
+output: html_notebook
+---
+
+## Motivation
+
+## Data
+
+The data for all aid projects across all 54 countries in Africa was retrieved from [d-portal](https://d-portal.org/ctrack.html?country_code=DZ%2CAO%2CBJ%2CBW%2CBF%2CBI%2CCV%2CCM%2CCF%2CTD%2CKM%2CCD%2CCG%2CCI%2CDJ%2CEG%2CGQ%2CER%2CSZ%2CET%2CGA%2CGM%2CGH%2CGN%2CGW%2CKE%2CLS%2CLR%2CLY%2CMG%2CMW%2CML%2CMR%2CMU%2CMZ%2CNA%2CNE%2CRW%2CST%2CSN%2CSC%2CSL%2CSO%2CZA%2CSS%2CSD%2CTZ%2CTG%2CTN%2CUG%2CZM%2CZW#view=main) (link already queries for all 54 countries). In total, 269,058 activites were recorded across 1148 IATI organisations of which 26% had exact geo-locations. Subject to this analysis is the subsample of aid projects that have exact geo-locations.  
+
+In the first visualations, please find a map including all xxx aid projects which were retrieved from d-portal.
+
+```{r}
+library(sf)
+library(data.table)
+
+aiddata <- read.csv("berlin_restaurants.csv")
+sf_aiddata <- st_as_sf(aiddata, coords = c("longitude", "latitude"), crs = 4326)
+
+head(sf_data)
+
+
+mapview::mapview(cities_sf)
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
