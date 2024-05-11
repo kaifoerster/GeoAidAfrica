@@ -1,6 +1,8 @@
 ---
-title: "Missionaries: Catalysts for Aid? Evidence from Africa"
-output: html_notebook
+title: 'Missionaries: Catalysts for Aid? Evidence from Africa'
+output:
+  pdf_document: default
+  html_notebook: default
 ---
 
 # Introduction
@@ -13,7 +15,7 @@ The data for all aid projects across all 54 countries in Africa was provided by 
 
 Missionary data comes from Hedde - von Westernhagen and Becker (2022) and is retrieved from [Harvard Dataverse](https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/E9EEMQ). To date, this is the most extensive colonial missionary dataset on Africa, surpassing Nunn (2010) whose data is often used for similar studies in terms of coverage.
 
-Country boundaries and sub-national boundaries are retrieved from [GADM](https://gadm.org/download_world.html) (see "whole world" and "whole world as six separate layers") and [ArcGis](https://hub.arcgis.com/datasets/CESJ::world-continents/explore?location=-0.383420%2C0.000000%2C1.36). Boundaries on climate zones come from [Regional Centre for Mapping of Resource for Development](https://gmesgeoportal.rcmrd.org/datasets/0a8acaf18f6d46a8b1226e98b2907af9/explore) and boundaries on water bodies are attained from the [World Bank](https://datacatalog.worldbank.org/search/dataset/0040797).
+Country boundaries and sub-national boundaries are retrieved from [GADM](https://gadm.org/download_world.html) (see "whole world" and "whole world as six separate layers") and [ArcGis](https://hub.arcgis.com/datasets/CESJ::world-continents/explore?location=-0.383420%2C0.000000%2C1.36). Boundaries on climate zones come from [Regional Centre for Mapping of Resource for Development](https://gmesgeoportal.rcmrd.org/datasets/0a8acaf18f6d46a8b1226e98b2907af9/explore).
 
 
 
@@ -60,7 +62,7 @@ aiddata_sf <- st_as_sf(aiddata, coords = c("location_longitude", "location_latit
 
 The sub-national, district boundaries at level 1  are loaded from GADM and filtered for African countries only. The code checks if boundaries for all countries was found. GADAM provided level 1-4. Here, level 1 is chosen because it has Africa-wide coverage, while more granular levels are not available for all African countries.
 
-Furthermore, a shape file for the whole African continent is loaded, and the areas that are desert or waterbody are subtracted. The remaining area can be considered the habitable land in Africa and is used later on to filter out raster cells that are located in inhabitable land when running spatial regressions.
+Furthermore, a shape file for the whole African continent is loaded, and the areas that are desert are subtracted. The remaining area can be considered the habitable land in Africa and is used later on to filter out raster cells that are located in inhabitable land when running spatial regressions.
 
 ```{r, results='hide'}
 #Level 1 boundaries
@@ -81,12 +83,6 @@ continents <- st_read("data/World_continents.shp")
 african_continent <- continents[continents$CONTINENT == "Africa",]
 qtm(african_continent)
 
-waterbodies <- st_read("data/Africa_waterbody.shp")
-waterbodies <- st_make_valid(waterbodies)
-waterbodies <- waterbodies[c("AF_WTR_ID", "geometry")]
-
-qtm(waterbodies, check.and.fix = TRUE)
-
 biomes <- st_read("data/Africa_Biomes_Dataset.shp")
 biomes <- st_transform(biomes, crs = 4326)
 qtm(biomes)
@@ -94,22 +90,9 @@ qtm(biomes)
 desert <- biomes[biomes$FID == 1,]
 qtm(desert)
 
-# Union lakes and deserts for subtraction
+#subtract desert from continent
 habitableAfrica <- st_difference(african_continent, desert)
-#habitableAfrica$AF_WTR_ID <- ""
-#st_write(habitableAfrica, "data/habitableAfrica1.shp")
 
-# Get the number of polygons in waterbodies
-num_polygons <- nrow(waterbodies)
-
-# Subtract each water body polygon from habitableAfrica
-#for (i in 1:num_polygons) {
-#  habitableAfrica <- habitableAfrica[c("FID", "AF_WTR_ID","geometry")]
-#  if (any(st_intersects(habitableAfrica, waterbodies$geometry[i]))) {
-#    # Perform the difference if there is an intersection
-#    habitableAfrica <- st_difference(habitableAfrica, waterbodies$geometry[i])
-#  }
-#}
 
 
 
@@ -450,19 +433,6 @@ Next, the raster is mapped on the Africa shape file and the raster cells are cro
 ### Distributing aid projects into grid cells
 
 ```{r}
-#Checking for invalid geometries
-#invalid_geometries <- which(!st_is_valid(boundaries_ctr))
-#print(invalid_geometries)
-
-#fixing invalid geometries
-#boundaries_ctr[boundaries_ctr$OBJECTID == 52, ] <- st_make_valid(boundaries_ctr[boundaries_ctr$OBJECTID == 52, ])
-
-# Creating union of countries to get a shape of Africa as a whole
-#africa_shape <- st_union(boundaries_ctr)
-#africa_shape <- st_make_valid(africa_shape)
-#tmap::qtm(africa_shape)
-tmap::qtm(african_continent)
-
 # Creating a raster
 # Define the extent using the bounding box coordinates
 xmin <- -25.3618
@@ -476,7 +446,9 @@ xy <- xyFromCell(raster_05deg, 1:ncell(raster_05deg))
 coop <- st_as_sf(as.data.frame(xy), coords = c("x", "y"),
                  crs = st_crs(african_continent))
 coop <- st_filter(coop, african_continent)
+coop2 <- st_filter(coop, habitableAfrica)
 coop_rast <- rasterize(coop, raster_05deg, field=1, fun='count')
+coop_rast2 <- rasterize(coop2, raster_05deg, field=1, fun='count')
 qtm(coop)
 
 # Number of project by raster
@@ -485,6 +457,7 @@ aiddata_vect <- vect(aiddata_sf)
 aid_raster <- rasterize(aiddata_vect, raster_05deg, fun="count")
 aid_raster[is.na(aid_raster)] <- 0
 aid_raster <- mask(aid_raster, coop_rast, maskvalue=NA, updatevalue=NA)
+aid_raster2 <- mask(aid_raster, coop_rast2, maskvalue=NA, updatevalue=NA)
 
 # Calculate the percentile breaks
 percentiles <- seq(0, 100, by = 10)  # Adjust this as needed
@@ -518,6 +491,7 @@ missions_vect <- vect(missions)
 mission_raster <- rasterize(missions_vect, raster_05deg, fun="count")
 mission_raster[is.na(mission_raster)] <- 0
 mission_raster <- mask(mission_raster, coop_rast, maskvalue=NA, updatevalue=NA)
+mission_raster2 <- mask(mission_raster, coop_rast2, maskvalue=NA, updatevalue=NA)
 
 # Calculate the percentile breaks
 percentiles <- seq(0, 100, by = 1)  # Adjust this as needed
@@ -665,21 +639,52 @@ To resolve this issue, a final specification the same two spatial regressions ar
 
 
 ```{r}
+# Extract raster values to data frames
+aid_values <- values(aid_raster2)
+aid_data <- data.frame(x = xy[,1], y = xy[,2], aid_projects = aid_values)
+colnames(aid_data)[3] <- "NumAid"
+
+mission_values <- values(mission_raster2)
+missions_data <- data.frame(x = xy[,1], y = xy[,2], missions = mission_values)
+colnames(missions_data)[3] <- "NumMissions"
+
+
+# Merge the data frames by coordinates
+regression_data_habitable <- merge(aid_data, missions_data, by=c("x", "y"))
+
+# Remove NA values which may complicate the analysis
+regression_data_habitable <- na.omit(regression_data)
+
+regression_data_habitable$lag_NumMissions <- lag.listw(wts, regression_data_habitable$NumMissions, zero.policy = TRUE)
+
+
+
+# Summary to check for NA or extreme values
+summary(regression_data_habitable$lag_NumMissions)
+
+# Linear model with spatial lag variable
+model_with_lag <- lm(NumAid ~ NumMissions + lag_NumMissions, data = regression_data_habitable)
+summary(model_with_lag)
+
+# Linear model including main effects and interaction term
+model_with_interaction <- lm(NumAid ~ NumMissions * lag_NumMissions, data = regression_data_habitable)
+summary(model_with_interaction)
+
 
 ```
 
 
 ## Discussion
 
+Future research could add more covariates to control for other factors that predict both missions and aid projects and could bias the results. Furthermore, uninhabitable areas could have included lakes and other bodies of water or dense forest area, as well as national parks.
+
 ## Conclusion
 
+This research project analysed the spatial correlation betweeen colonial missions and contemporary aid projects in Africa. It found that there seems to be a correlation between the two that persists over different specifications and methods.
+
 ## References
-
-Alpino and Hammersmark, 2021
-https://d-portal.org/ctrack.html?country_code=DZ%2CAO%2CBJ%2CBW%2CBF%2CBI%2CCV%2CCM%2CCF%2CTD%2CKM%2CCD%2CCG%2CCI%2CDJ%2CEG%2CGQ%2CER%2CSZ%2CET%2CGA%2CGM%2CGH%2CGN%2CGW%2CKE%2CLS%2CLR%2CLY%2CMG%2CMW%2CML%2CMR%2CMU%2CMZ%2CNA%2CNE%2CRW%2CST%2CSN%2CSC%2CSL%2CSO%2CZA%2CSS%2CSD%2CTZ%2CTG%2CTN%2CUG%2CZM%2CZW#view=main
-https://dataverse.harvard.edu/dataset.xhtml;jsessionid=007b01ae9a7dd5ebe43548b06261?persistentId=doi%3A10.7910%2FDVN%2FRBCHZ9&version=&q=&fileTypeGroupFacet=&fileAccess=
-https://gadm.org/download_world.html
-Hedde - von Westernhagen and Becker (2022) 
-Nunn (2010)
-
+Matteo Alpino and Eivind Moe Hammersmark (2021). "The Role of Historical Christian Missions in the Location of World Bank Aid in Africa", World Bank Policy Research Working Paper, 9146
+Christine Hedde-von Westernhagen and Bastian Becker (2022). "Mapping Missions: New Data for the Study of African History", Research Data Journal for the Humanities and Social Sciences, 7(1)
+Nathan Nunn (2010). Religious conversion in colonial Africa. American Economic Review: Papers & Proceedings, 100 (2), 147–152.
+Gelb (2023). “Network k Functions”
 
