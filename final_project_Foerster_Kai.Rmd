@@ -317,9 +317,11 @@ print(precision)
 
 rm(precision)
 ```
-Graph5 and 6 reports the number of projects by institution that have no reported precision levels against those that do (Graph6). Comparing Graph5 to Graph6, we can observe that donors either report their project locations using the location_precision variable, or they do not. For example, WHO which was ranked largest donor in Graph1 has no project with location_precision specified. In contrast, all BMZ projects consistently come with a location precision.
+Graph5 and 6 reports the number of projects by institution that have no reported precision levels against those that do (Graph6). Comparing Graph5 to Graph6, we can observe that donors either report their project locations using the location_precision variable, or they do not. For example, WHO which was ranked largest donor in Graph1 has no project with location_precision specified. In contrast, 73% of BMZ projects, 71% of ADB projects, 100% of UNICEF projects consistently come with a location precision.
 
 These findings could provoke future researcher to focus on donors that report precision levels and/or have high reporting coverage of their projects like the BMZ. Since reducing the scope of aid projects to a single donor comes with the drawback that it likely represents the population of aid project even less, this project sticks with using the entire data.
+
+[UNICEF](https://www.iatiregistry.org/publisher/unicef): Monthly updated files. Check  [here](https://open.unicef.org/transparency-tool/) for more details. UNICEF claims to completeness of data reported to d-portal, although provisional. Offical numbers can be found in DAC.
 
 ```{r prjOrganisation_unprecise}
 # Filter data to include only rows where location_precision is NA
