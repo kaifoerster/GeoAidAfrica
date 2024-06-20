@@ -1,10 +1,10 @@
 ---
 title: 'Missionaries: Catalysts for Aid? Evidence from Africa'
 output:
-  pdf_document: default
-  html_notebook: default
   html_document:
     df_print: paged
+  html_notebook: default
+  pdf_document: default
 ---
 
 # Introduction
@@ -117,10 +117,6 @@ str(missions)
 ```
 
 
-
-
-# Summary statistics
-
 ### Mapping missionary data
 
 This map displays mission locations by denomination on a map of national boundaries.
@@ -153,6 +149,7 @@ master <- st_join(aiddata_sf, africa_boundaries, join = st_intersects)
 This plot shows the location point of missions and number of aid projects by level 1 boundary. To do so, a new dataset was created with the number of aid projects by level 1 district. This dataset was merged with the level 1 boundary dataset to create a spatial dataframe including the polygons of the districts and the number of projects in each district. This data is plotted along side the point locations of missions, where mission points are coloured by their denomination.
 
 A caveat of this map is that larger districts in terms of area tend to have more projects and therefore show up in brighter colour. In order to address this issue, the concentration of aid project is revisisted in the analysis section by plotting the number of aid projects and missions on grid cells of 0.5x0.5 degrees (approximately 55kmx55km) following Alpino and Hammersmark (2021).
+
 ```{r mission_aid_map}
 
 # Create a dataset with number of projects by level 1 district
@@ -192,205 +189,327 @@ ggsave("output/missionsandaid.png", missionandaid,  width = 10, height = 7)
 rm(missionandaid)
 ```
 
+# Summary statistics of BMZ and UNICEF Data
 
-### Summary statistics on the aid data
-Graph 1: Number of project by institution where institution names are cut to the first four words and institutions with less than 500 projects are filtered out. One can observe that international organisations and bilateral donors have the highest number of reported geo-tagged projects in Africa. The organisation AidData is not a donor, but a data provider for geo-tagged aid projects. 
+### Create data subsets
+Here I am creating data subsets for BMZ and UNICEF data
 
-This reporting error brings to light a more fundamental issue with the data. The dataset classifies the agency that reports the data to IATI as donor, regardless of the implementing organisation. This means, that that projects could be double counted if the reporting agency, e.g. Agence Française de Développement, reports projects that finance multi-lateral organisations, e.g. UNICEF, who in turn report the project, given they implement it.
+```{r filter BMZ UNICEF data, results='hide'}
 
-For the Federal Ministry of Economics Cooperation and Development (the organisation with the second most projects in this dataset) (BMZ), the universe of aid projects financed by the ministry was sourced from [BMZ](https://www.transparenzportal.bund.de/en/research). For the BMZ, I found that close to all projects are reported in my data, and that the data includes only bilateral aid, i.e. it excludes funding to other international organisations. For other donors similar research could be conducted to refine the understanding about the quality of data provided here.
+bmz_data <- aiddata %>% filter(reporting=="Federal Ministry for Economic Cooperation and Development (BMZ)")
 
-```{r prjInstitutions}
-# Summarize data to count number of projects per reporting institution
-project_counts <- aiddata %>%
-  mutate(reporting = sapply(str_split(reporting, " "), function(x) paste(x[1:min(length(x), 4)], collapse=" "))) %>%
-  group_by(reporting) %>%
-  summarise(Number_of_Projects = n_distinct(aid), .groups = 'drop') %>%
-  filter(Number_of_Projects >= 500)  #
-
-#Sort institutions by number of projects
-prepared_data <- project_counts %>%
-  mutate(reporting = factor(reporting, levels = project_counts$reporting[order(-project_counts$Number_of_Projects)]))
-
-# Create the plot
-projectByInstitution <- ggplot(prepared_data, aes(x = reporting, y = Number_of_Projects, fill = reporting)) +
-  geom_bar(stat = "identity", color = "black") +  # Create the bars
-  geom_text(aes(label = Number_of_Projects), vjust = -0.3, color = "black", size = 2.3) + 
-  theme_minimal() +
-  labs(x = "Institution",
-       y = "Number of Projects") +
-  theme(axis.text.x = element_text(angle = 70, hjust = 1)) +
-  guides(fill = FALSE) +  
-  scale_y_continuous(labels = label_comma(), limits = c(NA, max(prepared_data$Number_of_Projects) * 1.1)) 
-
-# Display the plot
-print(projectByInstitution)
-
+unicef_data <- aiddata %>% filter(reporting=="UNICEF")
 
 ```
-Graph2: This figure shows the  number of aid projects across countries. Given we are not working with a sample of aid data, it is important to understand where aid projects in the data are concentrated. It seems that Ethopia, Somalia, Congo and South Sudan have many projects which surprised the author.
 
-```{r prjCountries}
+### BMZ by sector
 
-# Summarize data to count number of projects per country
-project_counts <- aiddata %>%
-  mutate(country_code = sapply(str_split(country_code, " "), function(x) paste(x[1:min(length(x), 2)], collapse=" "))) %>%
-  group_by(country_code) %>%
-  summarise(Number_of_Projects = n_distinct(aid), .groups = 'drop') 
+The graph shows the share of BMZ projects by sector (where the share is above 50 projects, about 0.5% of the total number of projects). We can observe that the most projects involve civil society, followed by agriculture, multisector, water&sanitation and basic health. Note, that some categories could be merged together or are not so informative. For example "other multi-sector" is not informative and "Health General" could be merged with "Basic Health". The operations would change the chart more.
 
-#Sort countries by number of projects
-prepared_data <- project_counts %>%
-  mutate(country = factor(country_code, levels = project_counts$country_code[order(-project_counts$Number_of_Projects)]))
+```{r , results='hide'}
+# Turn BMZ data into data.table
+bmz_data_sector <- data.table(bmz_data)
 
+# Set keys for the data.table
+setkeyv(bmz_data_sector, c("aid", "sector_code"))
 
-# Create the plot
-projectByInstitution <- ggplot(prepared_data, aes(x = country, y = Number_of_Projects, fill = country)) +
-  geom_bar(stat = "identity", color = "black") +
-  theme_minimal() +
-  labs(x = "Country",
-       y = "Number of Projects") +
-  theme(axis.text.x = element_text(angle = 70, hjust = 1)) +
-  guides(fill = FALSE) +  
-  scale_y_continuous(labels = label_comma(), limits = c(NA, max(prepared_data$Number_of_Projects) * 1.1)) 
+# Remove duplicates by keeping the first occurrence of each unique aid and sector_code pair
+bmz_data_sector <- bmz_data_sector[!duplicated(bmz_data_sector, by = c("aid", "sector_code"))]
 
-# Display the plot
-print(projectByInstitution)
+# Create the share column
+bmz_data_sector[, share := sector_percent / 100]
 
-```
-Graph3: This graph plots the number of project by start date in order to better understand the temporal dimension of the data. The large increase in projects after 2010 suggests that many more projects with geotags were reported to IATI, albeit it stays unclear whether this is due to an increase in aid projects or an improvement in project reporting.
+# Summarize the weighted number of projects per sector
+bmz_data_sectorGroup <- bmz_data_sector[, .(weighted_projects = sum(share)), by = sector_group]
 
+# Order the data by weighted_projects in descending order
+bmz_data_sectorGroup <- bmz_data_sectorGroup[order(-weighted_projects)]
 
-```{r prjYear}
+# Calculate the percentage of total projects
+total_projects <- sum(bmz_data_sectorGroup$weighted_projects)
+bmz_data_sectorGroup[, percentage := (weighted_projects / total_projects) * 100]
 
-# Summarize data to count the number of projects starting each year
-daily_projects <- aiddata %>%
-  mutate(year = year(day_start))%>%
-  group_by(year) %>%
-  summarise(Number_of_Projects = n_distinct(aid), .groups = 'drop') %>% 
-  arrange(year) %>% 
-  filter(year >= 1980)
-  
-
-# Create the line chart
-line_chart <- ggplot(daily_projects, aes(x = year, y = Number_of_Projects)) +
-  geom_line(group = 1, color = "blue", size = 1) +  
-  geom_point(color = "red", size = 2, shape = 21, fill = "white") +  
-  geom_text(data = filter(daily_projects, year %% 2 == 0), aes(label = Number_of_Projects), vjust = -0.5, hjust = 0.5, color = "black")+
-  labs(title = "Number of Projects by Start Date",
-       x = "Start Date",
-       y = "Number of Projects") +
+# Create the bar graph with percentages above the bars
+ggplot(bmz_data_sectorGroup[weighted_projects > 50], aes(x = reorder(sector_group, -weighted_projects), y = weighted_projects)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = paste0(round(percentage, 1), "%")), vjust = -0.5, size = 2) +
+  labs(title = "Weighted Number of Projects per Sector",
+       x = "Sector Group",
+       y = "Weighted Number of Projects") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
-# Display the plot
-print(line_chart)
 
 ```
-Graph4: Next, the quality of the geotags are evaluated. As explained by Alpino and Hammersmark (2021), the variable "location_precision" ranges from level 1-8, where 1 signifies a exact location specification, and 2 signifies a location accuracy up to 25km of the project location. All other precision levels are more coarse or not suited for geospatial analysis, and therefore projects with other precision levels are not reported with geo-tags in d-portal. 
 
-Given this context, we can observe from Graph4 that about half of the projects have a precision level of 1 or 2 and the rest has no reported precision level.
+So in a second step, I aggreagegated the sector groups further:
 
-```{r prjGeoPrecision}
+```{r , results='hide'}
 
-# Summarize data to count number of projects by location precision
-project_counts <- aiddata %>%
-  group_by(location_precision) %>%
-  summarise(Number_of_Projects = n_distinct(aid), .groups = 'drop')
+# Create a data frame for the breakdown table
+breakdown_table <- data.frame(
+  aggregate_category = c(
+    rep("Government and Civil Society", 4),
+    rep("Economic Development", 9),
+    rep("Infrastructure", 4),
+    rep("Health", 4),
+    rep("Emergency and Disaster Management", 4),
+    rep("Environment (incl. agriculture and fishing)", 4),
+    rep("Energy", 4),
+    rep("Education", 4),
+    rep("Admin", 1),
+    rep("Miscellaneous", 1)
+  ),
+  sector_group = c(
+    "Government & Civil Society-general",
+    "Conflict, Peace & Security",
+    "General Budget Support",
+    "Action Relating to Debt",
+    "Banking & Financial Services",
+    "Business & Other Services",
+    "Industry",
+    "Mineral Resources & Mining",
+    "Trade Policies & Regulations",
+    "Other Commodity Assistance",
+    "Tourism",
+    "Construction",
+    "Other Multisector",
+    "Water Supply & Sanitation",
+    "Transport & Storage",
+    "Other Social Infrastructure & Services",
+    "Communications",
+    "Basic Health",
+    "Population Policies/Programmes & Reproductive Health",
+    "Health, General",
+    "Non-communicable diseases (NCDs)",
+    "Development Food Assistance",
+    "Reconstruction Relief & Rehabilitation",
+    "Emergency Response",
+    "Disaster Prevention & Preparedness",
+    "General Environment Protection",
+    "Agriculture",
+    "Forestry",
+    "Fishing",
+    "Energy generation, renewable sources",
+    "Energy Policy",
+    "Energy distribution",
+    "Energy generation, non-renewable sources",
+    "Secondary Education",
+    "Basic Education",
+    "Education, Level Unspecified",
+    "Post-Secondary Education",
+    "Administrative Costs of Donors",
+    "Unallocated / Unspecified"
 
-#Sort by number od projects
-prepared_data <- project_counts %>%
-  mutate(location_precision = factor(location_precision, levels = project_counts$location_precision[order(-project_counts$Number_of_Projects)]))
+  )
+)
 
-# Create the plot
-precision <- ggplot(prepared_data, aes(x = location_precision, y = Number_of_Projects, fill = location_precision)) +
-  geom_bar(stat = "identity", color = "black") +  
-  geom_text(aes(label = Number_of_Projects), vjust = -0.3, color = "black", size = 2.3) +  
+# Merge the lookup table with bmz_data_sector to create the aggregate_category column
+bmz_data_sector <- merge(bmz_data_sector, breakdown_table, by = "sector_group", all.x = TRUE)
+
+# Summarize the weighted number of projects per new sector group
+bmz_data_sectorGroup <- bmz_data_sector[, .(weighted_projects = sum(share)), by = aggregate_category]
+
+# Order the data by weighted_projects in descending order
+bmz_data_sectorGroup <- bmz_data_sectorGroup[order(-weighted_projects)]
+
+# Calculate the percentage of total projects
+total_projects <- sum(bmz_data_sectorGroup$weighted_projects)
+bmz_data_sectorGroup[, percentage := (weighted_projects / total_projects) * 100]
+
+# Create the bar graph with percentages above the bars
+ggplot(bmz_data_sectorGroup[weighted_projects > 50,], aes(x = reorder(aggregate_category, -weighted_projects), y = weighted_projects)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = paste0(round(percentage, 1), "%")), vjust = -0.5, size = 3) +
+  labs(title = "Weighted Number of Projects per Sector",
+       x = "Aggregate Category",
+       y = "Weighted Number of Projects") +
   theme_minimal() +
-  labs(x = "Precision of Aid Locations",
-       y = "Number of Projects") +
-  theme(axis.text.x = element_text(angle = 70, hjust = 1)) +
-  guides(fill = FALSE) +  
-  scale_y_continuous(labels = label_comma(), limits = c(NA, max(prepared_data$Number_of_Projects) * 1.1)) 
-
-# Display the plot
-print(precision)
-
-rm(precision)
-```
-Graph5 and 6 reports the number of projects by institution that have no reported precision levels against those that do (Graph6). Comparing Graph5 to Graph6, we can observe that donors either report their project locations using the location_precision variable, or they do not. For example, WHO which was ranked largest donor in Graph1 has no project with location_precision specified. In contrast, 73% of BMZ projects, 71% of ADB projects, 100% of UNICEF projects consistently come with a location precision.
-
-These findings could provoke future researcher to focus on donors that report precision levels and/or have high reporting coverage of their projects like the BMZ. Since reducing the scope of aid projects to a single donor comes with the drawback that it likely represents the population of aid project even less, this project sticks with using the entire data.
-
-[UNICEF](https://www.iatiregistry.org/publisher/unicef): Monthly updated files. Check  [here](https://open.unicef.org/transparency-tool/) for more details. UNICEF claims to completeness of data reported to d-portal, although provisional. Offical numbers can be found in DAC.
-
-```{r prjOrganisation_unprecise}
-# Filter data to include only rows where location_precision is NA
-filtered_data <- aiddata %>%
-  filter(is.na(location_precision))
-
-# Summarize filtered data to count number of projects by institution
-project_counts <- filtered_data %>%
-  mutate(reporting = sapply(str_split(reporting, " "), function(x) paste(x[1:min(length(x), 4)], collapse=" "))) %>%
-  group_by(reporting) %>%
-  summarise(Number_of_Projects = n_distinct(aid), .groups = 'drop')%>%
-  filter(Number_of_Projects >= 500)  #
-
-#Sort institution by number of projects
-prepared_data <- project_counts %>%
-  mutate(reporting = factor(reporting, levels = project_counts$reporting[order(-project_counts$Number_of_Projects)]))
-
-# Create the plot
-institution_plot <- ggplot(prepared_data, aes(x = reporting, y = Number_of_Projects, fill = reporting)) +
-  geom_bar(stat = "identity", color = "black") +  # Create the bars
-  geom_text(aes(label = Number_of_Projects), vjust = -0.3, color = "black", size = 2.3) +  
-  theme_minimal() +
-  labs(x = "Institution",
-       y = "Number of Projects") +
-  theme(axis.text.x = element_text(angle = 70, hjust = 1)) +
-  guides(fill = FALSE) +
-  scale_y_continuous(labels = label_comma(), limits = c(NA, max(prepared_data$Number_of_Projects) * 1.1))
-
-# Display the plot
-print(institution_plot)
-
-rm(institution_plot)
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 ```
+
+Here is the breakdown of categories by sector_group:
+
 ```{r}
-# Filter data to include only rows where location_precision is not NA
-filtered_data <- aiddata %>%
-  filter(!is.na(location_precision))
 
-# Summarize filtered data to count number of projects by institution
-project_counts <- filtered_data %>%
-  mutate(reporting = sapply(str_split(reporting, " "), function(x) paste(x[1:min(length(x), 4)], collapse=" "))) %>%
-  mutate(year = year(day_start))%>%
-  filter(year<=2016)%>%
-  group_by(reporting) %>%
-  summarise(Number_of_Projects = n_distinct(aid), .groups = 'drop')%>%
-  filter(Number_of_Projects >= 500)  #
+# Convert the breakdown table to a visually appealing format
+breakdown_table2 <- breakdown_table %>%
+  group_by(aggregate_category) %>%
+  mutate(aggregate_category = ifelse(row_number() == 1, aggregate_category, ""))
 
-#Sort by number of projects
-prepared_data <- project_counts %>%
-  mutate(reporting = factor(reporting, levels = project_counts$reporting[order(-project_counts$Number_of_Projects)]))
-
-# Create the plot
-institution_plot <- ggplot(prepared_data, aes(x = reporting, y = Number_of_Projects, fill = reporting)) +
-  geom_bar(stat = "identity", color = "black") +  # Create the bars
-  geom_text(aes(label = Number_of_Projects), vjust = -0.3, color = "black", size = 2.3) +  
-  theme_minimal() +
-  labs(x = "Institution",
-       y = "Number of Projects") +
-  theme(axis.text.x = element_text(angle = 70, hjust = 1)) +
-  guides(fill = FALSE) +  
-  scale_y_continuous(labels = label_comma(), limits = c(NA, max(prepared_data$Number_of_Projects) * 1.1)) 
-
-# Display the plot
-print(institution_plot)
-
-rm(institution_plot)
+# Display the breakdown table using knitr for Rmarkdown
+knitr::kable(breakdown_table2, caption = "Breakdown of Sector Groups into Aggregate Categories")
 
 ```
+
+### UNICEF by sector
+
+The graph shows the share of BMZ projects by sector (where the share is above 50 projects, about 0.5% of the total number of projects). We can observe that the most projects involve administrative costs. Education, against the intution, only comes fourth in terms of share.
+
+```{r , results='hide'}
+# Turn UNICEF data into data.table
+unicef_data_sector <- data.table(unicef_data)
+
+# Set keys for the data.table
+setkeyv(unicef_data_sector, c("aid", "sector_code"))
+
+# Remove duplicates by keeping the first occurrence of each unique aid and sector_code pair
+unicef_data_sector <- unicef_data_sector[!duplicated(unicef_data_sector, by = c("aid", "sector_code"))]
+
+# Create the share column
+unicef_data_sector[, share := sector_percent / 100]
+
+# Summarize the weighted number of projects per sector
+unicef_data_sectorGroup <- unicef_data_sector[, .(weighted_projects = sum(share)), by = sector_group]
+
+# Order the data by weighted_projects in descending order
+unicef_data_sectorGroup <- unicef_data_sectorGroup[order(-weighted_projects)]
+
+# Calculate the percentage of total projects
+total_projects <- sum(unicef_data_sectorGroup$weighted_projects)
+unicef_data_sectorGroup[, percentage := (weighted_projects / total_projects) * 100]
+
+# Create the bar graph with percentages above the bars
+ggplot(unicef_data_sectorGroup[weighted_projects > 50], aes(x = reorder(sector_group, -weighted_projects), y = weighted_projects)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = paste0(round(percentage, 1), "%")), vjust = -0.5, size = 2) +
+  labs(title = "Weighted Number of Projects per Sector",
+       x = "Sector Group",
+       y = "Weighted Number of Projects") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+```
+
+In a second step, I aggreagegated the sector groups further, showing that the highest share is administrative costs, followed by health and infrastructure.
+
+```{r , results='hide'}
+#unicef_data_sector <- as.data.table(unicef_data_sector)
+#unicef_data_sector[, sector_group := trimws(sector_group)]
+#breakdown_table <- as.data.table(breakdown_table)
+# Merge the lookup table with bmz_data_sector to create the aggregate_category column
+unicef_data_sector <- left_join(unicef_data_sector, breakdown_table, by = "sector_group")
+
+test <- unicef_data_sector[aggregate_category=="",]
+
+# Summarize the weighted number of projects per new sector group
+unicef_data_sectorGroup <- unicef_data_sector[, .(weighted_projects = sum(share)), by = aggregate_category]
+
+# Order the data by weighted_projects in descending order
+unicef_data_sectorGroup <- unicef_data_sectorGroup[order(-weighted_projects)]
+
+# Calculate the percentage of total projects
+total_projects <- sum(unicef_data_sectorGroup$weighted_projects)
+unicef_data_sectorGroup[, percentage := (weighted_projects / total_projects) * 100]
+
+# Create the bar graph with percentages above the bars
+ggplot(unicef_data_sectorGroup[weighted_projects > 50,], aes(x = reorder(aggregate_category, -weighted_projects), y = weighted_projects)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = paste0(round(percentage, 1), "%")), vjust = -0.5, size = 3) +
+  labs(title = "Weighted Number of Projects per Sector",
+       x = "Aggregate Category",
+       y = "Weighted Number of Projects") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+### BMZ by country
+
+The graph shows the share of BMZ projects by country (where the share is above 50 projects, about 0.5% of the total number of projects). We can observe that there is a concentration of projects in some countries including S. Africa, Kenya, DRC and Ethopia.
+```{r , results='hide'}
+# Turn BMZ data into data.table
+bmz_data_ctr <- data.table(bmz_data)
+
+# Set keys for the data.table
+setkeyv(bmz_data_ctr, c("aid", "country_code"))
+
+# Remove duplicates by keeping the first occurrence of each unique aid and country_code pair
+bmz_data_ctr <- bmz_data_ctr[!duplicated(bmz_data_ctr, by = c("aid", "country_code"))]
+
+# Create the share column
+bmz_data_ctr[, share := country_percent / 100]
+
+# Summarize the weighted number of projects per country
+bmz_data_ctrGroup <- bmz_data_ctr[, .(weighted_projects = sum(share)), by = country_code]
+
+# Order the data by weighted_projects in descending order
+bmz_data_ctrGroup <- bmz_data_ctrGroup[order(-weighted_projects)]
+
+# Calculate the percentage of total projects
+total_projects <- sum(bmz_data_ctrGroup$weighted_projects)
+bmz_data_ctrGroup[, percentage := (weighted_projects / total_projects) * 100]
+
+# Create the bar graph with percentages above the bars
+ggplot(bmz_data_ctrGroup[weighted_projects > 50], aes(x = reorder(country_code, -weighted_projects), y = weighted_projects)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = paste0(round(percentage, 1), "%")), vjust = -0.5, size = 2) +
+  labs(title = "Weighted Number of Projects per Country",
+       x = "Country",
+       y = "Weighted Number of Projects") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+```
+
+### UNICEF by country
+
+The same graph for UNICEF shows a much less concentated picture.
+
+```{r , results='hide'}
+# Turn BMZ data into data.table
+unicef_data_ctr <- data.table(unicef_data)
+
+# Set keys for the data.table
+setkeyv(unicef_data_ctr, c("aid", "country_code"))
+
+# Remove duplicates by keeping the first occurrence of each unique aid and country_code pair
+unicef_data_ctr <- unicef_data_ctr[!duplicated(unicef_data_ctr, by = c("aid", "country_code"))]
+
+# Create the share column
+unicef_data_ctr[, share := country_percent / 100]
+
+# Summarize the weighted number of projects per country
+unicef_data_ctrGroup <- unicef_data_ctr[, .(weighted_projects = sum(share)), by = country_code]
+
+# Order the data by weighted_projects in descending order
+unicef_data_ctrGroup <- unicef_data_ctrGroup[order(-weighted_projects)]
+
+# Calculate the percentage of total projects
+total_projects <- sum(unicef_data_ctrGroup$weighted_projects)
+unicef_data_ctrGroup[, percentage := (weighted_projects / total_projects) * 100]
+
+# Create the bar graph with percentages above the bars
+ggplot(unicef_data_ctrGroup[weighted_projects > 50], aes(x = reorder(country_code, -weighted_projects), y = weighted_projects)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = paste0(round(percentage, 1), "%")), vjust = -0.5, size = 2) +
+  labs(title = "Weighted Number of Projects per Country",
+       x = "Country",
+       y = "Weighted Number of Projects") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+```
+
+### Distribution of Committment by BMZ and UNICEF
+
+The same graph for UNICEF shows a much less concentated picture.
+
+```{r , results='hide'}
+
+```
+
+
+
+
+
+
+
+
+
 
 
 
@@ -721,6 +840,7 @@ moran.test(model_with_interaction$residuals, listw=listw_no_zeros)
 
 ## Discussion
 
+
 Future research could add more covariates to control for other factors that predict both missions and aid projects and could bias the results. Furthermore, uninhabitable areas could have included lakes and other bodies of water or dense forest area, as well as national parks.
 
 ## Conclusion
@@ -735,5 +855,211 @@ Gelb (2023). “Network k Functions”
 Christine Hedde-von Westernhagen and Bastian Becker (2022). "Mapping Missions: New Data for the Study of African History", Research Data Journal for the Humanities and Social Sciences, 7(1)
 
 Nathan Nunn (2010). Religious conversion in colonial Africa. American Economic Review: Papers & Proceedings, 100 (2), 147–152.
+
+
+## Appendix
+
+### Summary statistics on the aid data
+
+Graph 1: Number of project by institution where institution names are cut to the first four words and institutions with less than 500 projects are filtered out. One can observe that international organisations and bilateral donors have the highest number of reported geo-tagged projects in Africa. The organisation AidData is not a donor, but a data provider for geo-tagged aid projects. 
+
+This reporting error brings to light a more fundamental issue with the data. The dataset classifies the agency that reports the data to IATI as donor, regardless of the implementing organisation. This means, that that projects could be double counted if the reporting agency, e.g. Agence Française de Développement, reports projects that finance multi-lateral organisations, e.g. UNICEF, who in turn report the project, given they implement it.
+
+For the Federal Ministry of Economics Cooperation and Development (the organisation with the second most projects in this dataset) (BMZ), the universe of aid projects financed by the ministry was sourced from [BMZ](https://www.transparenzportal.bund.de/en/research). For the BMZ, I found that close to all projects are reported in my data, and that the data includes only bilateral aid, i.e. it excludes funding to other international organisations. For other donors similar research could be conducted to refine the understanding about the quality of data provided here.
+
+```{r prjInstitutions}
+# Summarize data to count number of projects per reporting institution
+project_counts <- aiddata %>%
+  mutate(reporting = sapply(str_split(reporting, " "), function(x) paste(x[1:min(length(x), 4)], collapse=" "))) %>%
+  group_by(reporting) %>%
+  summarise(Number_of_Projects = n_distinct(aid), .groups = 'drop') %>%
+  filter(Number_of_Projects >= 500)  #
+
+#Sort institutions by number of projects
+prepared_data <- project_counts %>%
+  mutate(reporting = factor(reporting, levels = project_counts$reporting[order(-project_counts$Number_of_Projects)]))
+
+# Create the plot
+projectByInstitution <- ggplot(prepared_data, aes(x = reporting, y = Number_of_Projects, fill = reporting)) +
+  geom_bar(stat = "identity", color = "black") +  # Create the bars
+  geom_text(aes(label = Number_of_Projects), vjust = -0.3, color = "black", size = 2.3) + 
+  theme_minimal() +
+  labs(x = "Institution",
+       y = "Number of Projects") +
+  theme(axis.text.x = element_text(angle = 70, hjust = 1)) +
+  guides(fill = FALSE) +  
+  scale_y_continuous(labels = label_comma(), limits = c(NA, max(prepared_data$Number_of_Projects) * 1.1)) 
+
+# Display the plot
+print(projectByInstitution)
+
+
+```
+Graph2: This figure shows the  number of aid projects across countries. Given we are not working with a sample of aid data, it is important to understand where aid projects in the data are concentrated. It seems that Ethopia, Somalia, Congo and South Sudan have many projects which surprised the author.
+
+```{r prjCountries}
+
+# Summarize data to count number of projects per country
+project_counts <- aiddata %>%
+  mutate(country_code = sapply(str_split(country_code, " "), function(x) paste(x[1:min(length(x), 2)], collapse=" "))) %>%
+  group_by(country_code) %>%
+  summarise(Number_of_Projects = n_distinct(aid), .groups = 'drop') 
+
+#Sort countries by number of projects
+prepared_data <- project_counts %>%
+  mutate(country = factor(country_code, levels = project_counts$country_code[order(-project_counts$Number_of_Projects)]))
+
+
+# Create the plot
+projectByInstitution <- ggplot(prepared_data, aes(x = country, y = Number_of_Projects, fill = country)) +
+  geom_bar(stat = "identity", color = "black") +
+  theme_minimal() +
+  labs(x = "Country",
+       y = "Number of Projects") +
+  theme(axis.text.x = element_text(angle = 70, hjust = 1)) +
+  guides(fill = FALSE) +  
+  scale_y_continuous(labels = label_comma(), limits = c(NA, max(prepared_data$Number_of_Projects) * 1.1)) 
+
+# Display the plot
+print(projectByInstitution)
+
+```
+Graph3: This graph plots the number of project by start date in order to better understand the temporal dimension of the data. The large increase in projects after 2010 suggests that many more projects with geotags were reported to IATI, albeit it stays unclear whether this is due to an increase in aid projects or an improvement in project reporting.
+
+
+```{r prjYear}
+
+# Summarize data to count the number of projects starting each year
+daily_projects <- aiddata %>%
+  mutate(year = year(day_start))%>%
+  group_by(year) %>%
+  summarise(Number_of_Projects = n_distinct(aid), .groups = 'drop') %>% 
+  arrange(year) %>% 
+  filter(year >= 1980)
+  
+
+# Create the line chart
+line_chart <- ggplot(daily_projects, aes(x = year, y = Number_of_Projects)) +
+  geom_line(group = 1, color = "blue", size = 1) +  
+  geom_point(color = "red", size = 2, shape = 21, fill = "white") +  
+  geom_text(data = filter(daily_projects, year %% 2 == 0), aes(label = Number_of_Projects), vjust = -0.5, hjust = 0.5, color = "black")+
+  labs(title = "Number of Projects by Start Date",
+       x = "Start Date",
+       y = "Number of Projects") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Display the plot
+print(line_chart)
+
+```
+Graph4: Next, the quality of the geotags are evaluated. As explained by Alpino and Hammersmark (2021), the variable "location_precision" ranges from level 1-8, where 1 signifies a exact location specification, and 2 signifies a location accuracy up to 25km of the project location. All other precision levels are more coarse or not suited for geospatial analysis, and therefore projects with other precision levels are not reported with geo-tags in d-portal. 
+
+Given this context, we can observe from Graph4 that about half of the projects have a precision level of 1 or 2 and the rest has no reported precision level.
+
+```{r prjGeoPrecision}
+
+# Summarize data to count number of projects by location precision
+project_counts <- aiddata %>%
+  group_by(location_precision) %>%
+  summarise(Number_of_Projects = n_distinct(aid), .groups = 'drop')
+
+#Sort by number od projects
+prepared_data <- project_counts %>%
+  mutate(location_precision = factor(location_precision, levels = project_counts$location_precision[order(-project_counts$Number_of_Projects)]))
+
+# Create the plot
+precision <- ggplot(prepared_data, aes(x = location_precision, y = Number_of_Projects, fill = location_precision)) +
+  geom_bar(stat = "identity", color = "black") +  
+  geom_text(aes(label = Number_of_Projects), vjust = -0.3, color = "black", size = 2.3) +  
+  theme_minimal() +
+  labs(x = "Precision of Aid Locations",
+       y = "Number of Projects") +
+  theme(axis.text.x = element_text(angle = 70, hjust = 1)) +
+  guides(fill = FALSE) +  
+  scale_y_continuous(labels = label_comma(), limits = c(NA, max(prepared_data$Number_of_Projects) * 1.1)) 
+
+# Display the plot
+print(precision)
+
+rm(precision)
+```
+Graph5 and 6 reports the number of projects by institution that have no reported precision levels against those that do (Graph6). Comparing Graph5 to Graph6, we can observe that donors either report their project locations using the location_precision variable, or they do not. For example, WHO which was ranked largest donor in Graph1 has no project with location_precision specified. In contrast, 73% of BMZ projects, 71% of ADB projects, 100% of UNICEF projects consistently come with a location precision.
+
+These findings could provoke future researcher to focus on donors that report precision levels and/or have high reporting coverage of their projects like the BMZ. Since reducing the scope of aid projects to a single donor comes with the drawback that it likely represents the population of aid project even less, this project sticks with using the entire data.
+
+[UNICEF](https://www.iatiregistry.org/publisher/unicef): Monthly updated files. Check  [here](https://open.unicef.org/transparency-tool/) for more details. UNICEF claims to completeness of data reported to d-portal, although provisional. Offical numbers can be found in DAC.
+
+```{r prjOrganisation_unprecise}
+# Filter data to include only rows where location_precision is NA
+filtered_data <- aiddata %>%
+  filter(is.na(location_precision))
+
+# Summarize filtered data to count number of projects by institution
+project_counts <- filtered_data %>%
+  mutate(reporting = sapply(str_split(reporting, " "), function(x) paste(x[1:min(length(x), 4)], collapse=" "))) %>%
+  group_by(reporting) %>%
+  summarise(Number_of_Projects = n_distinct(aid), .groups = 'drop')%>%
+  filter(Number_of_Projects >= 500)  #
+
+#Sort institution by number of projects
+prepared_data <- project_counts %>%
+  mutate(reporting = factor(reporting, levels = project_counts$reporting[order(-project_counts$Number_of_Projects)]))
+
+# Create the plot
+institution_plot <- ggplot(prepared_data, aes(x = reporting, y = Number_of_Projects, fill = reporting)) +
+  geom_bar(stat = "identity", color = "black") +  # Create the bars
+  geom_text(aes(label = Number_of_Projects), vjust = -0.3, color = "black", size = 2.3) +  
+  theme_minimal() +
+  labs(x = "Institution",
+       y = "Number of Projects") +
+  theme(axis.text.x = element_text(angle = 70, hjust = 1)) +
+  guides(fill = FALSE) +
+  scale_y_continuous(labels = label_comma(), limits = c(NA, max(prepared_data$Number_of_Projects) * 1.1))
+
+# Display the plot
+print(institution_plot)
+
+rm(institution_plot)
+
+```
+```{r}
+# Filter data to include only rows where location_precision is not NA
+filtered_data <- aiddata %>%
+  filter(!is.na(location_precision))
+
+# Summarize filtered data to count number of projects by institution
+project_counts <- filtered_data %>%
+  mutate(reporting = sapply(str_split(reporting, " "), function(x) paste(x[1:min(length(x), 4)], collapse=" "))) %>%
+  mutate(year = year(day_start))%>%
+  filter(year<=2016)%>%
+  group_by(reporting) %>%
+  summarise(Number_of_Projects = n_distinct(aid), .groups = 'drop')%>%
+  filter(Number_of_Projects >= 500)  #
+
+#Sort by number of projects
+prepared_data <- project_counts %>%
+  mutate(reporting = factor(reporting, levels = project_counts$reporting[order(-project_counts$Number_of_Projects)]))
+
+# Create the plot
+institution_plot <- ggplot(prepared_data, aes(x = reporting, y = Number_of_Projects, fill = reporting)) +
+  geom_bar(stat = "identity", color = "black") +  # Create the bars
+  geom_text(aes(label = Number_of_Projects), vjust = -0.3, color = "black", size = 2.3) +  
+  theme_minimal() +
+  labs(x = "Institution",
+       y = "Number of Projects") +
+  theme(axis.text.x = element_text(angle = 70, hjust = 1)) +
+  guides(fill = FALSE) +  
+  scale_y_continuous(labels = label_comma(), limits = c(NA, max(prepared_data$Number_of_Projects) * 1.1)) 
+
+# Display the plot
+print(institution_plot)
+
+rm(institution_plot)
+
+```
+
+
+
 
 
