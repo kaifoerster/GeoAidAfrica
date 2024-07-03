@@ -494,27 +494,6 @@ ggplot(unicef_data_ctrGroup[weighted_projects > 50], aes(x = reorder(country_cod
 
 ```
 
-### Distribution of Committment by BMZ and UNICEF
-
-The same graph for UNICEF shows a much less concentated picture.
-
-```{r , results='hide'}
-
-```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 # Method
 
